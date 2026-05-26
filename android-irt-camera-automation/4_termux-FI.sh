@@ -1,5 +1,5 @@
 #!/bin/bash
-# v 0.1
+# v 0.2
 
 # ==============================================================================
 # KONFIGURATION (Werte aus dem Test-Skript hier eintragen)
@@ -17,10 +17,6 @@ TARGET_BASE_DIR="$HOME/Thermograhie_Studie"
 # Sounddateien aus dem KDE6-Ocean-Theme (Beruhigendere Klänge)
 SOUND_ALERT="/usr/share/sounds/ocean/stereo/dialog-information.oga"
 SOUND_SHUTTER="/usr/share/sounds/ocean/stereo/camera-shutter.oga"
-
-# Fallbacks falls das Ocean-Theme unvollständig installiert ist
-#[ ! -f "$SOUND_ALERT" ] && SOUND_ALERT="/usr/share/sounds/freedesktop/stereo/dialog-information.oga"
-#[ ! -f "$SOUND_SHUTTER" ] && SOUND_SHUTTER="/usr/share/sounds/freedesktop/stereo/camera-shutter.oga"
 
 # ==============================================================================
 # TUI FARBEN & DESIGN
