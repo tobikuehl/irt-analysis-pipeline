@@ -1,227 +1,267 @@
 #!/bin/bash
-# v 0.2
+# ==============================================================================
+# FLARE-INHIBITION (PILOTSTUDIE)
+# ==============================================================================
+# Autor: M.Sc. Osteopathie Forschungsetup
+# System: Android (GrapheneOS) via Termux (Flugmodus + Bluetooth)
+# v 0.4
+# ==============================================================================
 
-# ==============================================================================
-# KONFIGURATION (Werte aus dem Test-Skript hier eintragen)
-# ==============================================================================
+# 1. Hintergrund-Modus erzwingen (Verhindert CPU-Standby)
+termux-wake-lock
+
+# CONFIGURATION (Display-Koordinaten und Intervalle)
 X_CALIB=500
 Y_CALIB=1200
 X_SHUTTER=960
 Y_SHUTTER=2100
 
 INTERVALL=30
-BILDER=32
+TOTAL_BILDER=33    # Baseline t0 bis t32 (16 Minuten Gesamtlaufzeit)
 CALIB_ZEIT=3
-TARGET_BASE_DIR="$HOME/Thermograhie_Studie"
+START_PUFFER=30    # 30s Puffer für sicheren Kamera-Kaltstart
+AKKLIMATISIERUNG_MINUTEN=13
 
-# Sounddateien aus dem KDE6-Ocean-Theme (Beruhigendere Klänge)
-SOUND_ALERT="/usr/share/sounds/ocean/stereo/dialog-information.oga"
-SOUND_SHUTTER="/usr/share/sounds/ocean/stereo/camera-shutter.oga"
+# PFADE
+HIK_DIR="/sdcard/Pictures/HIKMICRO Viewer"
+STUDIE_BASE="/sdcard/FI/Messungen"
+SOUND_BASE="/sdcard/FI/sounds"
 
-# ==============================================================================
-# TUI FARBEN & DESIGN
-# ==============================================================================
+SOUND_ALERT="${SOUND_BASE}/service-login.oga" # ding
+SOUND_SHUTTER="${SOUND_BASE}/camera-shutter-leise.oga"
+SOUND_TAPE="${SOUND_BASE}/dialog-warning-auth.oga" # Tok-Tok
+
+# TUI DESIGN (Kontrastreich für kleine Bildschirme)
 CLEAR="clear"
 RESET="\e[0m"
 BOLD="\e[1m"
 RED="\e[31m"
 GREEN="\e[32m"
 YELLOW="\e[33m"
-BLUE="\e[34m"
 CYAN="\e[36m"
 WHITE_BG="\e[47m\e[30m"
 
-# Sound-Wiedergabefunktion mit Lautstärke-Dämpfung auf 40% für angenehme Raumatmosphäre
 PLAY_SOUND() {
-    local FILE=$1
-    if command -v paplay &> /dev/null && [ -f "$FILE" ]; then
-        paplay --volume=26214 "$FILE" >/dev/null 2>&1 &
-    elif command -v pw-play &> /dev/null && [ -f "$FILE" ]; then
-        pw-play --volume=0.8 "$FILE" >/dev/null 2>&1 &
-    fi
+    [ -f "$1" ] && termux-media-player play "$1" >/dev/null 2>&1 &
 }
 
-draw_line() { echo -e "${CYAN}------------------------------------------------------------${RESET}"; }
+draw_line() {
+    echo -e "${CYAN}============================================================${RESET}";
+}
 
 # ==============================================================================
-# TUI: DRAHTLOS-ADB VERBINDUNG PRÜFEN
+# PHASE 1: PRE-FLIGHT CHECK & INTERAKTIVES ADB-PAIRING
 # ==============================================================================
 $CLEAR
-echo -e "${BOLD}${CYAN}  ============================================================${RESET}"
-echo -e "${BOLD}${WHITE_BG}         FLARE-INHIBITION - eine Pilotstudie         ${RESET}"
-echo -e "${BOLD}${CYAN}  ============================================================${RESET}"
-echo -e ""
-echo -e "${YELLOW}  👉 Warte auf Drahtloses Debugging (max. 30s)...${RESET}"
+draw_line
+echo -e "${BOLD}${WHITE_BG}         PHASE 1: HARDWARE & ADB VERBINDUNGS-CHECK          ${RESET}"
+draw_line
+echo -e "\n  ${YELLOW}🔄 Prüfe lokale ADB-Verbindung...${RESET}"
 
-if ! timeout 30 adb wait-for-device; then
-    echo -e "${RED}  ❌ FEHLER: Timeout. Gerät nicht im WLAN gefunden.${RESET}"
-    exit 1
+# Prüfen, ob bereits ein Gerät verbunden ist
+if adb devices | grep -q -w "device"; then
+    echo -e "  ${GREEN}✅ ADB ist bereits verbunden!${RESET}"
+else
+    echo -e "  ${RED}❌ Keine aktive ADB-Verbindung gefunden.${RESET}"
+    echo -e "\n  ${CYAN}ℹ️ Bitte in den Entwickleroptionen 'Wireless Debugging' öffnen.${RESET}"
+    echo -e "  Wähle: ${BOLD}'Gerät mit Kopplungscode koppeln'${RESET}\n"
+
+    # 1. Pairing (falls das Gerät in Termux noch nie gekoppelt wurde)
+    echo -ne "  Muss das Gerät neu gekoppelt werden? (j/n): "
+    read NEU_KOPPELN
+    if [[ "$NEU_KOPPELN" == "j" || "$NEU_KOPPELN" == "J" ]]; then
+        echo -ne "  👉 Bitte den 5-stelligen ${BOLD}Port${RESET} für die Kopplung eingeben: "
+        read PAIR_PORT
+        echo -ne "  👉 Bitte den 6-stelligen ${BOLD}WLAN-Kopplungscode${RESET} eingeben: "
+        read PAIR_CODE
+        echo -e "  ${YELLOW}Versuche Kopplung...${RESET}"
+        adb pair localhost:$PAIR_PORT $PAIR_CODE
+        echo -e "\n  ${CYAN}Kopplung abgeschlossen. Gehe nun im Menü einen Schritt zurück.${RESET}"
+    fi
+
+    # 2. Verbinden (benötigt den Verbindungs-Port, NICHT den Pairing-Port!)
+    echo -e "\n  Schau nun unter 'IP-Adresse & Port' im Wireless Debugging Menü."
+    echo -ne "  👉 Bitte den 5-stelligen ${BOLD}Verbindungs-Port${RESET} eingeben: "
+    read CONN_PORT
+    echo -e "  ${YELLOW}Stelle Verbindung her...${RESET}"
+    adb connect localhost:$CONN_PORT
+
+    # 3. Finaler Check
+    sleep 2
+    if adb devices | grep -q -w "device"; then
+        echo -e "  ${GREEN}✅ ADB-Verbindung erfolgreich hergestellt!${RESET}"
+    else
+        echo -e "\n  ${RED}${BOLD}❌ FEHLER: Verbindung fehlgeschlagen!${RESET}"
+        echo -e "  ${RED}Bitte überprüfe die Ports und starte das Skript neu.${RESET}\n"
+        draw_line
+        termux-wake-unlock
+        exit 1
+    fi
 fi
-echo -e "${GREEN}  ✅ Kabellose ADB-Verbindung erfolgreich hergestellt!${RESET}"
+
+mkdir -p "$HIK_DIR"
 sleep 1
 
 # ==============================================================================
-# VORAB-CHECK: DCIM BEREINIGEN
-# ==============================================================================
-DCIM_CONTENT=$(adb shell "ls -A /sdcard/DCIM/" 2>/dev/null | tr -d '\r')
-if [ ! -z "$DCIM_CONTENT" ]; then
-    TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-    adb shell "mkdir -p /sdcard/Thermo_Backup/NotfallBackup_${TIMESTAMP} && mv /sdcard/DCIM/* /sdcard/Thermo_Backup/NotfallBackup_${TIMESTAMP}/" 2>/dev/null
-fi
-
-# ==============================================================================
-# PROBANDEN-DATEN EINGEBEN
+# PHASE 2: PROBANDEN-ID ERFASSEN (Vor der Akklimatisierung)
 # ==============================================================================
 $CLEAR
 draw_line
-echo -e "${BOLD}${YELLOW}  📋 DATENERFASSUNG PROBAND${RESET}"
+echo -e "  ${BOLD}${YELLOW}📋 INITIALISIERUNG PROBANDEN-DATEN${RESET}"
 draw_line
-echo ""
-read -p "$(echo -e "${BOLD}  Bitte Probanden-ID eingeben: ${RESET}")" PROBAND_ID
+echo -e "\n  ${BOLD}Bitte Probanden-ID eingeben (z.B. 001):${RESET}"
+echo -ne "  ${CYAN}👉 ${RESET}"
+read PROBAND_ID
 
 if [ -z "$PROBAND_ID" ]; then
-    echo -e "${RED}  Abbruch: Keine ID eingegeben.${RESET}"
+    echo -e "\n  ${RED}❌ Abbruch: Keine ID eingegeben.${RESET}"
+    draw_line
+    termux-wake-unlock
     exit 0
 fi
 
-PHONE_BACKUP_DIR="/sdcard/Thermo_Backup/Proband_${PROBAND_ID}"
-SURFACE_TARGET_DIR="${TARGET_BASE_DIR}/Proband_${PROBAND_ID}"
+PHONE_BACKUP_DIR="${STUDIE_BASE}/Proband_${PROBAND_ID}"
+mkdir -p "$PHONE_BACKUP_DIR"
+LOG_FILE="${HIK_DIR}/proband_${PROBAND_ID}_messung.log"
 
-echo ""
-echo -e "  📁 Zielpfad Pixel:   ${CYAN}${PHONE_BACKUP_DIR}${RESET}"
-echo -e "  📁 Zielpfad Surface: ${CYAN}${SURFACE_TARGET_DIR}${RESET}"
-echo ""
-draw_line
-read -p "$(echo -e "${BOLD}${GREEN}  👉 Drücke [ENTER] um die 16-Minuten-Messreihe zu STARTEN...${RESET}")"
+# Start des Protokolls schreiben
+echo "=== MESSUNG PROBAND ${PROBAND_ID} (30s INTERVALL) ===" > "$LOG_FILE"
+date "+%Y-%m-%d %H:%M:%S - Skript gestartet und ID registriert" >> "$LOG_FILE"
 
 # ==============================================================================
-# CORE MESS-SCHLEIFE
-# ==============================================================================
-start_time=$(date +%s)
-
-for ((i=1; i<=BILDER; i++))
-do
-    loop_start=$(date +%s)
-    ACTION_MSG=""
-    ACTION_ALERT=0
-
-    case $i in
-        1|3|7|9|18|32)
-            ACTION_MSG="${RED}${BOLD}  ⚠️  AUFFORDERUNG: VAS 📝${RESET}"
-            ACTION_ALERT=1
-            ;;
-        10)
-            ACTION_MSG="${YELLOW}${BOLD}  💧 AKTION: SCHABLONE NEU ANFEUCHTEN 💧${RESET}"
-            ACTION_ALERT=1
-            ;;
-    esac
-
-    # Signalton aus dem Ocean-Theme abspielen bei fälliger Aktion
-    if [ $ACTION_ALERT -eq 1 ]; then
-        PLAY_SOUND "$SOUND_ALERT"
-    fi
-
-    # TUI Refresh
-    $CLEAR
-    draw_line
-    echo -e "${BOLD}${WHITE_BG}          MESSREIHE LÄUFT: PROBAND ${PROBAND_ID}          ${RESET}"
-    draw_line
-
-    PROG_PERCENT=$(( (i * 100) / BILDER ))
-    BAR_FILLED=$(( i / 2 ))
-    BAR_EMPTY=$(( (BILDER - i) / 2 ))
-
-    echo -e "\n${BOLD}  Gesamtfortschritt: [${GREEN}$(printf '#%.0s' $(seq 1 $BAR_FILLED))$(printf ' %.0s' $(seq 1 $BAR_EMPTY))${RESET}] ${PROG_PERCENT}%"
-    echo -e "  Aktuelles Bild:     ${BOLD}${GREEN}$i${RESET} von ${BOLD}$BILDER${RESET}"
-    echo -e "  Zeit seit Start:    ${CYAN}$(( (loop_start - start_time) )) Sek.${RESET}\n"
-
-    if [ ! -z "$ACTION_MSG" ]; then
-        echo -e "${CYAN}┌──────────────────────────────────────────────────────────┐${RESET}"
-        echo -e "  $ACTION_MSG"
-        echo -e "${CYAN}└──────────────────────────────────────────────────────────┘${RESET}\n"
-    else
-        echo -e "${BLUE}  ℹ️  Aktuell keine manuellen Probanden-Aktionen fällig.${RESET}\n"
-    fi
-    draw_line
-
-    # 1. Kalibrierung auslösen
-    echo -e "  🤖 Skript-Status: Triggere manuelle Kalibrierung (NUC)..."
-    adb shell input tap $X_CALIB $Y_CALIB >/dev/null 2>&1
-    sleep $CALIB_ZEIT
-
-    # 2. Foto auslösen & Shutter-Sound abspielen
-    echo -e "  📸 Skript-Status: Schieße Wärmebild..."
-    PLAY_SOUND "$SOUND_SHUTTER"
-    adb shell input tap $X_SHUTTER $Y_SHUTTER >/dev/null 2>&1
-
-    # 3. Countdown bis zum nächsten Intervall
-    if [ $i -lt $BILDER ]; then
-        loop_end=$(date +%s)
-        elapsed=$((loop_end - loop_start))
-        remaining_sleep=$((INTERVALL - elapsed))
-        if [ $remaining_sleep -le 0 ]; then remaining_sleep=1; fi # Schutzwert
-
-        while [ $remaining_sleep -gt 0 ]
-        do
-            echo -ne "  ⏱️  Nächstes Intervall in: ${BOLD}${YELLOW}${remaining_sleep}s${RESET}   \r"
-            sleep 1
-            remaining_sleep=$((remaining_sleep - 1))
-        done
-    fi
-done
-
-# ==============================================================================
-# SMARTPHONE AUTO-BACKUP
+# PHASE 3: AKKLIMATISIERUNG & AUFWÄRMZEIT (13 Minuten Countdown)
 # ==============================================================================
 $CLEAR
 draw_line
-echo -e "${BOLD}${GREEN}  ✅ MESSREIHE BEENDET! ALLE BILDER ERFOLGREICH IM KASTEN.${RESET}"
+echo -e "${BOLD}${WHITE_BG}       PHASE 3: AKKLIMATISIERUNG & CAMERA WARM-UP       ${RESET}"
 draw_line
-echo -e "\n  Verschiebe Daten in den Probanden-Backup-Ordner auf dem Smartphone..."
+echo -e "  Probanden-ID: ${GREEN}${PROBAND_ID}${RESET}"
+echo -e "\n  ${YELLOW}ℹ️  Führen Sie jetzt die Aufklärung und den Prä-Check durch.${RESET}\n"
 
-adb shell "mkdir -p ${PHONE_BACKUP_DIR} && mv /sdcard/DCIM/* ${PHONE_BACKUP_DIR}/" 2>/dev/null
-echo -e "  -> Datensicherung auf dem Pixel abgeschlossen: ${CYAN}${PHONE_BACKUP_DIR}${RESET}\n"
-draw_line
+TOTAL_SECS=$((AKKLIMATISIERUNG_MINUTEN * 60))
+START_TIME=$(date +%s)
+
+while [ $TOTAL_SECS -gt 0 ]; do
+    MINS=$((TOTAL_SECS / 60))
+    SECS=$((TOTAL_SECS % 60))
+    printf "\r  ⏱️  Verbleibende Zeit: ${BOLD}${YELLOW}%02d:%02d${RESET} Min. " $MINS $SECS
+    sleep 1
+    CURRENT_TIME=$(date +%s)
+    ELAPSED=$((CURRENT_TIME - START_TIME))
+    TOTAL_SECS=$(( (AKKLIMATISIERUNG_MINUTEN * 60) - ELAPSED ))
+done
+
+# Signalton nach Ablauf der 13 Minuten
+PLAY_SOUND "$SOUND_ALERT"
+date "+%Y-%m-%d %H:%M:%S - 13 Minuten Akklimatisierung beendet" >> "$LOG_FILE"
 
 # ==============================================================================
-# DOWNLOAD AUF DAS SURFACE & GWENVIEW-AUFRUF
+# PHASE 4: AUTOMATISCHER MESSSTART (Keine manuelle Eingabe mehr nötig!)
 # ==============================================================================
-echo -e "${BOLD}  Möchtest du die 32 Bilder jetzt kabellos herunterladen?${RESET}"
-echo -e "  1) ${GREEN}Ja, jetzt via WLAN herunterladen${RESET}"
-echo -e "  2) Nein, Daten vorerst auf dem Pixel belassen"
-echo ""
-read -p "  Auswahl (1 oder 2): " DOWNLOAD_CHOICE
+$CLEAR
+draw_line
+echo -e "  ${BOLD}${GREEN}🔔 AKKLIMATISIERUNG BEENDET!${RESET}"
+draw_line
+echo -e "\n  🚀 Starte Hikmicro-App im Vordergrund..."
+echo -e "  Die Baseline-Messung (Bild 0) beginnt in ${BOLD}${START_PUFFER} Sekunden${RESET}."
+draw_line
 
-if [ "$DOWNLOAD_CHOICE" = "1" ]; then
-    mkdir -p "$SURFACE_TARGET_DIR"
-    echo -e "\n  🔄 Übertragungs-Status: Ziehe Bilddaten via WLAN..."
+# App starten oder über den exakten GrapheneOS-Paketnamen erzwingen
+adb shell monkey -p com.hikvision.thermalGoogle -c android.intent.category.LAUNCHER 1 >/dev/null 2>&1
 
-    adb pull "${PHONE_BACKUP_DIR}/" "$TARGET_BASE_DIR/"
+# 30 Sekunden Puffer für stabilen Kamera-Kaltstart (Vermeidet leere Bilder)
+sleep $START_PUFFER
+STUDIE_START=$(date +%s)
+date "+%Y-%m-%d %H:%M:%S - MESSREIHE GESTARTET (Bild 0 / 000s)" >> "$LOG_FILE"
 
-    if [ $? -eq 0 ]; then
-        echo -e "\n${BOLD}${GREEN}  🎉 WIRELESS-DOWNLOAD ERFOLGREICH!${RESET}"
-        echo -e "  Die Daten stehen zur Analyse bereit unter: ${CYAN}${SURFACE_TARGET_DIR}${RESET}\n"
-        draw_line
+# ==============================================================================
+# PHASE 5: CORE MESS-SCHLEIFE (Optimiert für NUC-Vorlauf vor dem Snapshot)
+# ==============================================================================
+for ((i=0; i<TOTAL_BILDER; i++))
+do
+    loop_start=$(date +%s)
+    SEKUNDEN=$((i * INTERVALL))
+    MSG=""
 
-        # GWENVIEW
-        echo -e "${BOLD}  Möchten Sie die Bilder jetzt direkt in Gwenview zur Sichtung öffnen?${RESET}"
-        echo -e "  1) ${GREEN}Ja, Gwenview starten${RESET}"
-        echo -e "  2) Nein, nur das Skript beenden"
-        echo ""
-        read -p "  Auswahl (1 oder 2): " VIEW_CHOICE
+    # 1. KALIBRIERUNG (NUC) - 3 Sekunden vor dem Bild auslösen
+    adb shell input tap $X_CALIB $Y_CALIB >/dev/null 2>&1
+    date "+%Y-%m-%d %H:%M:%S - Bild $i (${SEKUNDEN}s): NUC-Kalibrierung gestartet" >> "$LOG_FILE"
 
-        if [ "$VIEW_CHOICE" = "1" ]; then
-            echo -e "\n  🚀 Starte Gwenview..."
-            gwenview "$SURFACE_TARGET_DIR" >/dev/null 2>&1 &
-        else
-            echo -e "\n  ℹ️  Skript wird beendet. Sie können die Bilder später manuell sichten."
-        fi
-    else
-        echo -e "\n${RED}  ❌ FEHLER beim WLAN-Download. Bitte prüfen Sie das Drahtlos-ADB-Netzwerk.${RESET}"
+    # Präzise Wartezeit, damit der Sensor sich stabilisiert (Vorgabe: 3-4s)
+    sleep $CALIB_ZEIT
+
+    # 2. SNAPSHOT AUSLÖSEN (Direkt nach der Stabilisierung)
+    PLAY_SOUND "$SOUND_SHUTTER"
+    adb shell input tap $X_SHUTTER $Y_SHUTTER >/dev/null 2>&1
+    date "+%Y-%m-%d %H:%M:%S - Bild $i (${SEKUNDEN}s): Snapshot ausgelöst" >> "$LOG_FILE"
+
+    # 3. ZUSATZSOUNDS & ALARME (Erst NACH dem Bild, um Artefakte zu vermeiden)
+    case $SEKUNDEN in
+        0)
+            MSG="VAS 1 (Baseline)"
+            PLAY_SOUND "$SOUND_ALERT"
+            ;;
+        60)
+            MSG="VAS 2 + Abbruchcheck (Post-Reiz)"
+            PLAY_SOUND "$SOUND_ALERT"
+            ;;
+        180)
+            MSG="VAS 3"
+            PLAY_SOUND "$SOUND_ALERT"
+            ;;
+        240)
+            MSG="VAS 4 (HAUPT-ENDPUNKT)"
+            PLAY_SOUND "$SOUND_ALERT"
+            ;;
+        300)
+            MSG="K-Tape nachfeuchten!"
+            if [ -f "$SOUND_TAPE" ]; then
+                PLAY_SOUND "$SOUND_TAPE"
+            else
+                PLAY_SOUND "$SOUND_ALERT"
+                sleep 0.4
+                PLAY_SOUND "$SOUND_ALERT"
+            fi
+            ;;
+        540)
+            MSG="VAS 5"
+            PLAY_SOUND "$SOUND_ALERT"
+            ;;
+        960)
+            MSG="VAS 6 (Finale Kinetik)"
+            PLAY_SOUND "$SOUND_ALERT"
+            ;;
+    esac
+
+    # Protokollierung des Alarms im Log-File (falls einer ausgelöst wurde)
+    if [ ! -z "$MSG" ]; then
+        date "+%Y-%m-%d %H:%M:%S - Bild $i (${SEKUNDEN}s): Akustischer Alarm für: $MSG" >> "$LOG_FILE"
     fi
-else
-    echo -e "\n${YELLOW}  ℹ️  Vorgang beendet. Bilder liegen exklusiv im Smartphone-Speicher.${RESET}\n"
-fi
 
-draw_line
+    # 4. Präzises Warten bis zum nächsten äquidistanten 30-Sekunden-Fenster
+    if [ $i -lt $((TOTAL_BILDER - 1)) ]; then
+        loop_end=$(date +%s)
+        elapsed=$((loop_end - loop_start))
+        remaining_sleep=$((INTERVALL - elapsed))
+
+        # Sicherheitsnetz: Falls ADB-Latenzen zu hoch werden
+        [ $remaining_sleep -le 0 ] && remaining_sleep=1
+        sleep $remaining_sleep
+    fi
+done
+
+date "+%Y-%m-%d %H:%M:%S - Messreihe erfolgreich beendet. 33 Bilder gesichert." >> "$LOG_FILE"
+
+# ==============================================================================
+# PHASE 6: POST-FLIGHT (Automatische Datenverschiebung in Probanden-Zielordner)
+# ==============================================================================
+echo -e "\n  💾 Bereinige Messdaten und verschiebe Bilder..."
+
+# Sicherheits-Puffer, damit das letzte Bild vollständig geschrieben ist
+sleep 3
+
+mv "${HIK_DIR}"/* "${PHONE_BACKUP_DIR}/" 2>/dev/null
+
+# Reaktivierung des Android-Energiesparmodus
+termux-wake-unlock
 exit 0
