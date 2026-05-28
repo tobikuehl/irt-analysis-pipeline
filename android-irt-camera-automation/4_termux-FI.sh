@@ -1,20 +1,23 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # ==============================================================================
 # FLARE-INHIBITION (PILOTSTUDIE)
 # ==============================================================================
 # Autor: M.Sc. Osteopathie Forschungsetup
 # System: Android (GrapheneOS) via Termux (Flugmodus + Bluetooth)
-# v 0.4
+# v 0.5
 # ==============================================================================
 
 # 1. Hintergrund-Modus erzwingen (Verhindert CPU-Standby)
 termux-wake-lock
 
 # CONFIGURATION (Display-Koordinaten und Intervalle)
-X_CALIB=500
-Y_CALIB=1200
-X_SHUTTER=960
-Y_SHUTTER=2100
+X_CALIB1=667
+Y_CALIB1=194
+X_CALIB2=590
+Y_CALIB2=321
+
+X_SHUTTER=480
+Y_SHUTTER=2034
 
 INTERVALL=30
 TOTAL_BILDER=33    # Baseline t0 bis t32 (16 Minuten Gesamtlaufzeit)
@@ -90,6 +93,15 @@ else
     sleep 2
     if adb devices | grep -q -w "device"; then
         echo -e "  ${GREEN}✅ ADB-Verbindung erfolgreich hergestellt!${RESET}"
+
+        # Sound-Check
+        echo -e "  ${YELLOW}🎵 Führe Sound-Check durch...${RESET}"
+        PLAY_SOUND "$SOUND_ALERT"
+        sleep 1
+        PLAY_SOUND "$SOUND_SHUTTER"
+        sleep 1
+        PLAY_SOUND "$SOUND_TAPE"
+        sleep 1
     else
         echo -e "\n  ${RED}${BOLD}❌ FEHLER: Verbindung fehlgeschlagen!${RESET}"
         echo -e "  ${RED}Bitte überprüfe die Ports und starte das Skript neu.${RESET}\n"
@@ -166,6 +178,11 @@ echo -e "\n  🚀 Starte Hikmicro-App im Vordergrund..."
 echo -e "  Die Baseline-Messung (Bild 0) beginnt in ${BOLD}${START_PUFFER} Sekunden${RESET}."
 draw_line
 
+# Bildschirm eingeschaltet lassen und HikVision-App schließen
+adb shell svc power stayon true
+adb shell am force-stop com.hikvision.thermalGoogle
+sleep 2
+
 # App starten oder über den exakten GrapheneOS-Paketnamen erzwingen
 adb shell monkey -p com.hikvision.thermalGoogle -c android.intent.category.LAUNCHER 1 >/dev/null 2>&1
 
@@ -184,7 +201,9 @@ do
     MSG=""
 
     # 1. KALIBRIERUNG (NUC) - 3 Sekunden vor dem Bild auslösen
-    adb shell input tap $X_CALIB $Y_CALIB >/dev/null 2>&1
+    adb shell input tap $X_CALIB1 $Y_CALIB1 >/dev/null 2>&1
+    sleep 1
+    adb shell input tap $X_CALIB2 $Y_CALIB2 >/dev/null 2>&1
     date "+%Y-%m-%d %H:%M:%S - Bild $i (${SEKUNDEN}s): NUC-Kalibrierung gestartet" >> "$LOG_FILE"
 
     # Präzise Wartezeit, damit der Sensor sich stabilisiert (Vorgabe: 3-4s)
@@ -263,5 +282,6 @@ sleep 3
 mv "${HIK_DIR}"/* "${PHONE_BACKUP_DIR}/" 2>/dev/null
 
 # Reaktivierung des Android-Energiesparmodus
+adb shell svc power stayon false
 termux-wake-unlock
 exit 0
