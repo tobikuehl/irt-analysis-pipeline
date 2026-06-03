@@ -4,7 +4,7 @@
 # ==============================================================================
 # Autor: M.Sc. Osteopathie Forschungsetup
 # System: Android (GrapheneOS) via Termux (Flugmodus + Bluetooth)
-# v 0.5
+# v 1.1
 # ==============================================================================
 
 # 1. Hintergrund-Modus erzwingen (Verhindert CPU-Standby)
@@ -26,30 +26,35 @@ START_PUFFER=30    # 30s Puffer für sicheren Kamera-Kaltstart
 AKKLIMATISIERUNG_MINUTEN=13
 
 # PFADE
-HIK_DIR="/sdcard/Pictures/HIKMICRO Viewer"
-STUDIE_BASE="/sdcard/FI/Messungen"
-SOUND_BASE="/sdcard/FI/sounds"
+HIK_DIR="/data/data/com.termux/files/home/storage/pictures/HIKMICRO Viewer"
+STUDIE_BASE="/data/data/com.termux/files/home/storage/shared/FI/Messungen"
+SOUND_BASE="/data/data/com.termux/files/home/storage/shared/FI/sounds"
 
 SOUND_ALERT="${SOUND_BASE}/service-login.oga" # ding
 SOUND_SHUTTER="${SOUND_BASE}/camera-shutter-leise.oga"
 SOUND_TAPE="${SOUND_BASE}/dialog-warning-auth.oga" # Tok-Tok
 
-# TUI DESIGN (Kontrastreich für kleine Bildschirme)
+# TUI DESIGN (Universelle Oktalcodes, optimiert für schmale Bildschirme)
 CLEAR="clear"
-RESET="\e[0m"
-BOLD="\e[1m"
-RED="\e[31m"
-GREEN="\e[32m"
-YELLOW="\e[33m"
-CYAN="\e[36m"
-WHITE_BG="\e[47m\e[30m"
+RESET="\033[0m"
+BOLD="\033[1m"
+RED="\033[31m"
+GREEN="\033[32m"
+YELLOW="\033[33m"
+CYAN="\033[36m"
+WHITE_BG="\033[47m\033[30m"
 
 PLAY_SOUND() {
     [ -f "$1" ] && termux-media-player play "$1" >/dev/null 2>&1 &
 }
 
+# Erzeugt eine Linie, die sich perfekt an die Displaybreite anpasst
 draw_line() {
-    echo -e "${CYAN}============================================================${RESET}";
+    local cols=$(tput cols 2>/dev/null || echo 40)
+    [ "$cols" -gt 50 ] && cols=50
+    printf "${CYAN}"
+    printf '=%.0s' $(seq 1 "$cols")
+    printf "${RESET}\n"
 }
 
 # ==============================================================================
@@ -57,7 +62,7 @@ draw_line() {
 # ==============================================================================
 $CLEAR
 draw_line
-echo -e "${BOLD}${WHITE_BG}         PHASE 1: HARDWARE & ADB VERBINDUNGS-CHECK          ${RESET}"
+echo -e "${BOLD}${WHITE_BG}  PHASE 1: HARDWARE & ADB CHECK  ${RESET}"
 draw_line
 echo -e "\n  ${YELLOW}🔄 Prüfe lokale ADB-Verbindung...${RESET}"
 
@@ -93,8 +98,8 @@ else
     sleep 2
     if adb devices | grep -q -w "device"; then
         echo -e "  ${GREEN}✅ ADB-Verbindung erfolgreich hergestellt!${RESET}"
-
-        # Sound-Check
+        
+        # Sound-Check mit Pausen für akustische Bestätigung
         echo -e "  ${YELLOW}🎵 Führe Sound-Check durch...${RESET}"
         PLAY_SOUND "$SOUND_ALERT"
         sleep 1
@@ -145,10 +150,10 @@ date "+%Y-%m-%d %H:%M:%S - Skript gestartet und ID registriert" >> "$LOG_FILE"
 # ==============================================================================
 $CLEAR
 draw_line
-echo -e "${BOLD}${WHITE_BG}       PHASE 3: AKKLIMATISIERUNG & CAMERA WARM-UP       ${RESET}"
+echo -e "${BOLD}${WHITE_BG}  PHASE 3: AKKLIMATISIERUNG & WARM-UP  ${RESET}"
 draw_line
 echo -e "  Probanden-ID: ${GREEN}${PROBAND_ID}${RESET}"
-echo -e "\n  ${YELLOW}ℹ️  Führen Sie jetzt die Aufklärung und den Prä-Check durch.${RESET}\n"
+echo -e "\n  ${YELLOW}ℹ️ Führen Sie jetzt Aufklärung & Prä-Check durch.${RESET}\n"
 
 TOTAL_SECS=$((AKKLIMATISIERUNG_MINUTEN * 60))
 START_TIME=$(date +%s)
@@ -156,7 +161,7 @@ START_TIME=$(date +%s)
 while [ $TOTAL_SECS -gt 0 ]; do
     MINS=$((TOTAL_SECS / 60))
     SECS=$((TOTAL_SECS % 60))
-    printf "\r  ⏱️  Verbleibende Zeit: ${BOLD}${YELLOW}%02d:%02d${RESET} Min. " $MINS $SECS
+    printf "\r  ⏱️ Zeit: ${BOLD}${YELLOW}%02d:%02d${RESET} Min. " $MINS $SECS
     sleep 1
     CURRENT_TIME=$(date +%s)
     ELAPSED=$((CURRENT_TIME - START_TIME))
@@ -168,31 +173,31 @@ PLAY_SOUND "$SOUND_ALERT"
 date "+%Y-%m-%d %H:%M:%S - 13 Minuten Akklimatisierung beendet" >> "$LOG_FILE"
 
 # ==============================================================================
-# PHASE 4: AUTOMATISCHER MESSSTART (Keine manuelle Eingabe mehr nötig!)
+# PHASE 4: AUTOMATISCHER MESSSTART
 # ==============================================================================
 $CLEAR
 draw_line
-echo -e "  ${BOLD}${GREEN}🔔 AKKLIMATISIERUNG BEENDET!${RESET}"
+echo -e "${BOLD}${GREEN}🔔 AKKLIMATISIERUNG BEENDET!${RESET}"
 draw_line
 echo -e "\n  🚀 Starte Hikmicro-App im Vordergrund..."
-echo -e "  Die Baseline-Messung (Bild 0) beginnt in ${BOLD}${START_PUFFER} Sekunden${RESET}."
+echo -e "  Baseline (Bild 0) beginnt in ${BOLD}${START_PUFFER} Sekunden${RESET}."
 draw_line
 
-# Bildschirm eingeschaltet lassen und HikVision-App schließen
-adb shell svc power stayon true
+# Bildschirm erzwungen eingeschaltet lassen und HikVision-App resetten
+adb shell settings put system screen_off_timeout 1800000
 adb shell am force-stop com.hikvision.thermalGoogle
 sleep 2
 
-# App starten oder über den exakten GrapheneOS-Paketnamen erzwingen
+# App sauber über den Paketnamen starten
 adb shell monkey -p com.hikvision.thermalGoogle -c android.intent.category.LAUNCHER 1 >/dev/null 2>&1
 
-# 30 Sekunden Puffer für stabilen Kamera-Kaltstart (Vermeidet leere Bilder)
+# Puffer für Kamera-Kaltstart
 sleep $START_PUFFER
 STUDIE_START=$(date +%s)
 date "+%Y-%m-%d %H:%M:%S - MESSREIHE GESTARTET (Bild 0 / 000s)" >> "$LOG_FILE"
 
 # ==============================================================================
-# PHASE 5: CORE MESS-SCHLEIFE (Optimiert für NUC-Vorlauf vor dem Snapshot)
+# PHASE 5: CORE MESS-SCHLEIFE (30s Taktung mit NUC-Vorlauf)
 # ==============================================================================
 for ((i=0; i<TOTAL_BILDER; i++))
 do
@@ -206,15 +211,15 @@ do
     adb shell input tap $X_CALIB2 $Y_CALIB2 >/dev/null 2>&1
     date "+%Y-%m-%d %H:%M:%S - Bild $i (${SEKUNDEN}s): NUC-Kalibrierung gestartet" >> "$LOG_FILE"
 
-    # Präzise Wartezeit, damit der Sensor sich stabilisiert (Vorgabe: 3-4s)
+    # Präzise Wartezeit für Sensorstabilisierung
     sleep $CALIB_ZEIT
 
-    # 2. SNAPSHOT AUSLÖSEN (Direkt nach der Stabilisierung)
+    # 2. SNAPSHOT AUSLÖSEN
     PLAY_SOUND "$SOUND_SHUTTER"
     adb shell input tap $X_SHUTTER $Y_SHUTTER >/dev/null 2>&1
     date "+%Y-%m-%d %H:%M:%S - Bild $i (${SEKUNDEN}s): Snapshot ausgelöst" >> "$LOG_FILE"
 
-    # 3. ZUSATZSOUNDS & ALARME (Erst NACH dem Bild, um Artefakte zu vermeiden)
+    # 3. AKUSTISCHE TIMER-SIGNALE (VAS & K-Tape)
     case $SEKUNDEN in
         0)
             MSG="VAS 1 (Baseline)"
@@ -252,7 +257,6 @@ do
             ;;
     esac
 
-    # Protokollierung des Alarms im Log-File (falls einer ausgelöst wurde)
     if [ ! -z "$MSG" ]; then
         date "+%Y-%m-%d %H:%M:%S - Bild $i (${SEKUNDEN}s): Akustischer Alarm für: $MSG" >> "$LOG_FILE"
     fi
@@ -263,7 +267,6 @@ do
         elapsed=$((loop_end - loop_start))
         remaining_sleep=$((INTERVALL - elapsed))
 
-        # Sicherheitsnetz: Falls ADB-Latenzen zu hoch werden
         [ $remaining_sleep -le 0 ] && remaining_sleep=1
         sleep $remaining_sleep
     fi
@@ -272,16 +275,24 @@ done
 date "+%Y-%m-%d %H:%M:%S - Messreihe erfolgreich beendet. 33 Bilder gesichert." >> "$LOG_FILE"
 
 # ==============================================================================
-# PHASE 6: POST-FLIGHT (Automatische Datenverschiebung in Probanden-Zielordner)
+# PHASE 6: POST-FLIGHT (Datenverschiebung & Aufräumen)
 # ==============================================================================
 echo -e "\n  💾 Bereinige Messdaten und verschiebe Bilder..."
-
-# Sicherheits-Puffer, damit das letzte Bild vollständig geschrieben ist
 sleep 3
 
+# Bilder in den Probanden-Ordner verschieben
 mv "${HIK_DIR}"/* "${PHONE_BACKUP_DIR}/" 2>/dev/null
 
-# Reaktivierung des Android-Energiesparmodus
-adb shell svc power stayon false
+# 🔄 NEU: Hikmicro-App schließen und Termux wieder in den Vordergrund holen
+echo -e "  🛑 Schließe Kamera-App und kehre zu Termux zurück..."
+adb shell am force-stop com.hikvision.thermalGoogle
+sleep 1
+adb shell monkey -p com.termux -c android.intent.category.LAUNCHER 1 >/dev/null 2>&1
+sleep 1
+
+# Display-Sperre wieder freigeben & Timeout auf 30 Sekunden zurücksetzen
+adb shell settings put system screen_off_timeout 30000
 termux-wake-unlock
+
+echo -e "  ${GREEN}✅ Fertig! Daten liegen in: Proband_${PROBAND_ID}${RESET}\n"
 exit 0
