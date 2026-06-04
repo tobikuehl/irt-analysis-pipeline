@@ -17,10 +17,10 @@ X_SHUTTER=480
 Y_SHUTTER=2034
 
 INTERVALL=10       # Nur 10 Sekunden zwischen den Bildern
-TOTAL_BILDER=2     # Exakt 2 Testbilder
+TOTAL_BILDER=3     # Exakt 2 Testbilder
 CALIB_ZEIT=3
-START_PUFFER=5     # Nur 5 Sekunden Puffer für den App-Start
-TEST_COUNTDOWN=3   # 3 Sekunden "Akklimatisierung" statt 13 Minuten
+START_PUFFER=10     # Nur 5 Sekunden Puffer für den App-Start
+TEST_COUNTDOWN=5   # 3 Sekunden "Akklimatisierung" statt 13 Minuten
 
 # ABSOLUTE TERMUX-PFADE
 HIK_DIR="/data/data/com.termux/files/home/storage/pictures/HIKMICRO Viewer"
