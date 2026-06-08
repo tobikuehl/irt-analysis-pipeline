@@ -4,7 +4,7 @@
 # ==============================================================================
 # Autor: M.Sc. Osteopathie Forschungsetup
 # System: Android (GrapheneOS) via Termux (Flugmodus + Bluetooth)
-# v 1.1
+# v 1.2
 # ==============================================================================
 
 # 1. Hintergrund-Modus erzwingen (Verhindert CPU-Standby)
@@ -23,7 +23,7 @@ INTERVALL=30
 TOTAL_BILDER=33    # Baseline t0 bis t32 (16 Minuten Gesamtlaufzeit)
 CALIB_ZEIT=3
 START_PUFFER=30    # 30s Puffer für sicheren Kamera-Kaltstart
-AKKLIMATISIERUNG_MINUTEN=13
+AKKLIMATISIERUNG_MINUTEN=1
 
 # PFADE
 HIK_DIR="/data/data/com.termux/files/home/storage/pictures/HIKMICRO Viewer"
@@ -155,7 +155,7 @@ draw_line
 echo -e "  Probanden-ID: ${GREEN}${PROBAND_ID}${RESET}"
 echo -e "\n  ${YELLOW}ℹ️ Führen Sie jetzt Aufklärung & Prä-Check durch.${RESET}\n"
 
-TOTAL_SECS=$((AKKLIMATISIERUNG_MINUTEN * 60))
+TOTAL_SECS=$((AKKLIMATISIERUNG_MINUTEN * 45))
 START_TIME=$(date +%s)
 
 while [ $TOTAL_SECS -gt 0 ]; do
@@ -165,7 +165,7 @@ while [ $TOTAL_SECS -gt 0 ]; do
     sleep 1
     CURRENT_TIME=$(date +%s)
     ELAPSED=$((CURRENT_TIME - START_TIME))
-    TOTAL_SECS=$(( (AKKLIMATISIERUNG_MINUTEN * 60) - ELAPSED ))
+    TOTAL_SECS=$(( (AKKLIMATISIERUNG_MINUTEN * 45) - ELAPSED ))
 done
 
 # Signalton nach Ablauf der 13 Minuten
