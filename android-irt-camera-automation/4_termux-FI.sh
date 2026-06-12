@@ -4,7 +4,7 @@
 # ==============================================================================
 # Autor: M.Sc. Osteopathie Forschungsetup
 # System: Android (GrapheneOS) via Termux (Flugmodus + Bluetooth)
-# v 1.2
+# v 1.3
 # ==============================================================================
 
 # 1. Hintergrund-Modus erzwingen (Verhindert CPU-Standby)
@@ -126,7 +126,7 @@ $CLEAR
 draw_line
 echo -e "  ${BOLD}${YELLOW}📋 INITIALISIERUNG PROBANDEN-DATEN${RESET}"
 draw_line
-echo -e "\n  ${BOLD}Bitte Probanden-ID eingeben (z.B. 001):${RESET}"
+echo -e "\n  ${BOLD}Bitte Probanden-ID eingeben (z.B. 01):${RESET}"
 echo -ne "  ${CYAN}👉 ${RESET}"
 read PROBAND_ID
 
@@ -155,7 +155,7 @@ draw_line
 echo -e "  Probanden-ID: ${GREEN}${PROBAND_ID}${RESET}"
 echo -e "\n  ${YELLOW}ℹ️ Führen Sie jetzt Aufklärung & Prä-Check durch.${RESET}\n"
 
-TOTAL_SECS=$((AKKLIMATISIERUNG_MINUTEN * 45))
+TOTAL_SECS=$((AKKLIMATISIERUNG_MINUTEN * 0))
 START_TIME=$(date +%s)
 
 while [ $TOTAL_SECS -gt 0 ]; do
