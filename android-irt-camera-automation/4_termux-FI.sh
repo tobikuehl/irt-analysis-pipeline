@@ -4,7 +4,7 @@
 # ==============================================================================
 # Autor: M.Sc. Osteopathie Forschungsetup
 # System: Android (GrapheneOS) via Termux (Flugmodus + Bluetooth)
-# v 1.3
+# v 1.4
 # ==============================================================================
 
 # 1. Hintergrund-Modus erzwingen (Verhindert CPU-Standby)
@@ -23,7 +23,7 @@ INTERVALL=30
 TOTAL_BILDER=33    # Baseline t0 bis t32 (16 Minuten Gesamtlaufzeit)
 CALIB_ZEIT=3
 START_PUFFER=30    # 30s Puffer für sicheren Kamera-Kaltstart
-AKKLIMATISIERUNG_MINUTEN=1
+AKKLIMATISIERUNG_MINUTEN=0
 
 # PFADE
 HIK_DIR="/data/data/com.termux/files/home/storage/pictures/HIKMICRO Viewer"
@@ -32,7 +32,6 @@ SOUND_BASE="/data/data/com.termux/files/home/storage/shared/FI/sounds"
 
 SOUND_ALERT="${SOUND_BASE}/service-login.oga" # ding
 SOUND_SHUTTER="${SOUND_BASE}/camera-shutter-leise.oga"
-SOUND_TAPE="${SOUND_BASE}/dialog-warning-auth.oga" # Tok-Tok
 
 # TUI DESIGN (Universelle Oktalcodes, optimiert für schmale Bildschirme)
 CLEAR="clear"
@@ -153,9 +152,8 @@ draw_line
 echo -e "${BOLD}${WHITE_BG}  PHASE 3: AKKLIMATISIERUNG & WARM-UP  ${RESET}"
 draw_line
 echo -e "  Probanden-ID: ${GREEN}${PROBAND_ID}${RESET}"
-echo -e "\n  ${YELLOW}ℹ️ Führen Sie jetzt Aufklärung & Prä-Check durch.${RESET}\n"
 
-TOTAL_SECS=$((AKKLIMATISIERUNG_MINUTEN * 0))
+TOTAL_SECS=$((AKKLIMATISIERUNG_MINUTEN * 60))
 START_TIME=$(date +%s)
 
 while [ $TOTAL_SECS -gt 0 ]; do
@@ -237,16 +235,6 @@ do
             MSG="VAS 4 (HAUPT-ENDPUNKT)"
             PLAY_SOUND "$SOUND_ALERT"
             ;;
-        300)
-            MSG="K-Tape nachfeuchten!"
-            if [ -f "$SOUND_TAPE" ]; then
-                PLAY_SOUND "$SOUND_TAPE"
-            else
-                PLAY_SOUND "$SOUND_ALERT"
-                sleep 0.4
-                PLAY_SOUND "$SOUND_ALERT"
-            fi
-            ;;
         540)
             MSG="VAS 5"
             PLAY_SOUND "$SOUND_ALERT"
@@ -283,7 +271,7 @@ sleep 3
 # Bilder in den Probanden-Ordner verschieben
 mv "${HIK_DIR}"/* "${PHONE_BACKUP_DIR}/" 2>/dev/null
 
-# 🔄 NEU: Hikmicro-App schließen und Termux wieder in den Vordergrund holen
+# 🔄 Hikmicro-App schließen und Termux wieder in den Vordergrund holen
 echo -e "  🛑 Schließe Kamera-App und kehre zu Termux zurück..."
 adb shell am force-stop com.hikvision.thermalGoogle
 sleep 1
