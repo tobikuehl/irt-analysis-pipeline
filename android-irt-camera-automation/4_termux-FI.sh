@@ -2,9 +2,9 @@
 # ==============================================================================
 # FLARE-INHIBITION (PILOTSTUDIE)
 # ==============================================================================
-# Autor: M.Sc. Osteopathie Forschungsetup
-# System: Android (GrapheneOS) via Termux (Flugmodus + Bluetooth)
-# v 1.4
+# Autor: Tobias Kühl
+# System: Android (GrapheneOS) via Termux
+# v 1.5
 # ==============================================================================
 
 # 1. Hintergrund-Modus erzwingen (Verhindert CPU-Standby)
@@ -33,7 +33,7 @@ SOUND_BASE="/data/data/com.termux/files/home/storage/shared/FI/sounds"
 SOUND_ALERT="${SOUND_BASE}/service-login.oga" # ding
 SOUND_SHUTTER="${SOUND_BASE}/camera-shutter-leise.oga"
 
-# TUI DESIGN (Universelle Oktalcodes, optimiert für schmale Bildschirme)
+# TUI-DESIGN (optimiert für schmale Bildschirme)
 CLEAR="clear"
 RESET="\033[0m"
 BOLD="\033[1m"
@@ -47,7 +47,7 @@ PLAY_SOUND() {
     [ -f "$1" ] && termux-media-player play "$1" >/dev/null 2>&1 &
 }
 
-# Erzeugt eine Linie, die sich perfekt an die Displaybreite anpasst
+# Erzeugt eine Linie, die sich an die Displaybreite anpasst
 draw_line() {
     local cols=$(tput cols 2>/dev/null || echo 40)
     [ "$cols" -gt 50 ] && cols=50
@@ -104,8 +104,6 @@ else
         sleep 1
         PLAY_SOUND "$SOUND_SHUTTER"
         sleep 1
-        PLAY_SOUND "$SOUND_TAPE"
-        sleep 1
     else
         echo -e "\n  ${RED}${BOLD}❌ FEHLER: Verbindung fehlgeschlagen!${RESET}"
         echo -e "  ${RED}Bitte überprüfe die Ports und starte das Skript neu.${RESET}\n"
@@ -125,7 +123,7 @@ $CLEAR
 draw_line
 echo -e "  ${BOLD}${YELLOW}📋 INITIALISIERUNG PROBANDEN-DATEN${RESET}"
 draw_line
-echo -e "\n  ${BOLD}Bitte Probanden-ID eingeben (z.B. 01):${RESET}"
+echo -e "\n  ${BOLD}Bitte Probanden-ID eingeben:${RESET}"
 echo -ne "  ${CYAN}👉 ${RESET}"
 read PROBAND_ID
 
@@ -145,33 +143,7 @@ echo "=== MESSUNG PROBAND ${PROBAND_ID} (30s INTERVALL) ===" > "$LOG_FILE"
 date "+%Y-%m-%d %H:%M:%S - Skript gestartet und ID registriert" >> "$LOG_FILE"
 
 # ==============================================================================
-# PHASE 3: AKKLIMATISIERUNG & AUFWÄRMZEIT (13 Minuten Countdown)
-# ==============================================================================
-$CLEAR
-draw_line
-echo -e "${BOLD}${WHITE_BG}  PHASE 3: AKKLIMATISIERUNG & WARM-UP  ${RESET}"
-draw_line
-echo -e "  Probanden-ID: ${GREEN}${PROBAND_ID}${RESET}"
-
-TOTAL_SECS=$((AKKLIMATISIERUNG_MINUTEN * 60))
-START_TIME=$(date +%s)
-
-while [ $TOTAL_SECS -gt 0 ]; do
-    MINS=$((TOTAL_SECS / 60))
-    SECS=$((TOTAL_SECS % 60))
-    printf "\r  ⏱️ Zeit: ${BOLD}${YELLOW}%02d:%02d${RESET} Min. " $MINS $SECS
-    sleep 1
-    CURRENT_TIME=$(date +%s)
-    ELAPSED=$((CURRENT_TIME - START_TIME))
-    TOTAL_SECS=$(( (AKKLIMATISIERUNG_MINUTEN * 45) - ELAPSED ))
-done
-
-# Signalton nach Ablauf der 13 Minuten
-PLAY_SOUND "$SOUND_ALERT"
-date "+%Y-%m-%d %H:%M:%S - 13 Minuten Akklimatisierung beendet" >> "$LOG_FILE"
-
-# ==============================================================================
-# PHASE 4: AUTOMATISCHER MESSSTART
+# PHASE 3: AUTOMATISCHER MESSSTART
 # ==============================================================================
 $CLEAR
 draw_line
@@ -195,7 +167,7 @@ STUDIE_START=$(date +%s)
 date "+%Y-%m-%d %H:%M:%S - MESSREIHE GESTARTET (Bild 0 / 000s)" >> "$LOG_FILE"
 
 # ==============================================================================
-# PHASE 5: CORE MESS-SCHLEIFE (30s Taktung mit NUC-Vorlauf)
+# PHASE 4: CORE MESS-SCHLEIFE (30s Taktung mit NUC-Vorlauf)
 # ==============================================================================
 for ((i=0; i<TOTAL_BILDER; i++))
 do
@@ -217,29 +189,29 @@ do
     adb shell input tap $X_SHUTTER $Y_SHUTTER >/dev/null 2>&1
     date "+%Y-%m-%d %H:%M:%S - Bild $i (${SEKUNDEN}s): Snapshot ausgelöst" >> "$LOG_FILE"
 
-    # 3. AKUSTISCHE TIMER-SIGNALE (VAS & K-Tape)
+    # 3. AKUSTISCHE TIMER-SIGNALE (VAS)
     case $SEKUNDEN in
         0)
             MSG="VAS 1 (Baseline)"
             PLAY_SOUND "$SOUND_ALERT"
             ;;
-        60)
+        45)
             MSG="VAS 2 + Abbruchcheck (Post-Reiz)"
             PLAY_SOUND "$SOUND_ALERT"
             ;;
-        180)
+        90)
             MSG="VAS 3"
             PLAY_SOUND "$SOUND_ALERT"
             ;;
-        240)
+        300)
             MSG="VAS 4 (HAUPT-ENDPUNKT)"
             PLAY_SOUND "$SOUND_ALERT"
             ;;
-        540)
+        600)
             MSG="VAS 5"
             PLAY_SOUND "$SOUND_ALERT"
             ;;
-        960)
+        930)
             MSG="VAS 6 (Finale Kinetik)"
             PLAY_SOUND "$SOUND_ALERT"
             ;;
@@ -249,7 +221,7 @@ do
         date "+%Y-%m-%d %H:%M:%S - Bild $i (${SEKUNDEN}s): Akustischer Alarm für: $MSG" >> "$LOG_FILE"
     fi
 
-    # 4. Präzises Warten bis zum nächsten äquidistanten 30-Sekunden-Fenster
+    # 4. Warten bis zum nächsten 30-Sekunden-Fenster
     if [ $i -lt $((TOTAL_BILDER - 1)) ]; then
         loop_end=$(date +%s)
         elapsed=$((loop_end - loop_start))
@@ -265,14 +237,14 @@ date "+%Y-%m-%d %H:%M:%S - Messreihe erfolgreich beendet. 33 Bilder gesichert." 
 # ==============================================================================
 # PHASE 6: POST-FLIGHT (Datenverschiebung & Aufräumen)
 # ==============================================================================
-echo -e "\n  💾 Bereinige Messdaten und verschiebe Bilder..."
+echo -e "\n  💾 Verschiebe Bilder..."
 sleep 3
 
 # Bilder in den Probanden-Ordner verschieben
 mv "${HIK_DIR}"/* "${PHONE_BACKUP_DIR}/" 2>/dev/null
 
 # 🔄 Hikmicro-App schließen und Termux wieder in den Vordergrund holen
-echo -e "  🛑 Schließe Kamera-App und kehre zu Termux zurück..."
+echo -e "  🛑 Schließe Kamera-App..."
 adb shell am force-stop com.hikvision.thermalGoogle
 sleep 1
 adb shell monkey -p com.termux -c android.intent.category.LAUNCHER 1 >/dev/null 2>&1
