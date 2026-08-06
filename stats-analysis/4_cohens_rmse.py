@@ -1,57 +1,80 @@
 import pandas as pd
 import numpy as np
 
-def clean_numeric(series):
-    """Bügelt das deutsche Komma-Problem weg."""
-    return pd.to_numeric(series.astype(str).str.replace(',', '.'), errors='coerce')
+def ultra_clean(df):
+    """Die erfolgreiche Methode aus v4: Säubert Spaltennamen und Zellinhalte."""
+    # 1. Spaltennamen von Leerzeichen befreien
+    df.columns = df.columns.str.strip()
+
+    # 2. Zellinhalte bereinigen
+    for col in df.columns:
+        if df[col].dtype == 'object':
+            # Entferne Anführungszeichen, korrigiere Dezimalkomma, entferne Leerzeichen
+            df[col] = df[col].astype(str).str.replace('"', '').str.replace(',', '.').str.strip()
+
+        # Umwandlung in numerische Werte erzwingen (ungültige werden NaN)
+        df[col] = pd.to_numeric(df[col], errors='coerce')
+
+    # 3. ID als Ganzzahl (Integer) normieren
+    if 'id' in df.columns:
+        df = df.dropna(subset=['id'])
+        df['id'] = df['id'].astype(int)
+    return df
 
 try:
     # 1. DATEN LADEN
-    df_sum = pd.read_csv('cohens_d.csv', sep=None, engine='python')
-    df_ts = pd.read_csv('Messungen_zeitreihen.csv', sep=None, engine='python')
+    df_sum_raw = pd.read_csv('cohens_d.csv', sep=None, engine='python')
+    df_ts_raw = pd.read_csv('Messungen_zeitreihen.csv', sep=None, engine='python')
 
-    # 2. REINIGUNG
-    df_sum['id'] = clean_numeric(df_sum['id']).astype(int)
-    df_sum['auc_delta'] = clean_numeric(df_sum['auc_delta'])
-    df_sum['group_id'] = clean_numeric(df_sum['group_id'])
+    # 2. DIE ERFOLGREICHE REINIGUNG ANWENDEN
+    df_sum = ultra_clean(df_sum_raw)
+    df_ts = ultra_clean(df_ts_raw)
 
-    # Falls du die Spalte mit den Max-Werten anders benannt hast, hier anpassen:
-    max_col = 'temp_aoi_a_max'
-    df_sum[max_col] = clean_numeric(df_sum[max_col])
+    # 3. BASELINE-MITTELWERTE (Phase 0) AUS ZEITREIHEN EXTRAHIEREN
+    temp_col = 'temp_aoi_a_avg' if 'temp_aoi_a_avg' in df_ts.columns else 'temp_aoi_a_max'
+    baseline_list = []
 
-    # 3. BASELINE-MITTELWERTE (Phase 0) AUS ZEITREIHEN HOLEN
-    baseline_lookup = {}
     for sid in df_sum['id'].unique():
-        # Baseline-Durchschnitt für jeden Probanden berechnen
-        b_val = df_ts[(df_ts['id'] == sid) & (df_ts['time_phase'] == 0)]['temp_aoi_a_avg']
-        if not b_val.empty:
-            baseline_lookup[sid] = b_val.mean()
+        # Mittelwert der Phase 0 für jeden Probanden berechnen [1]
+        base_rows = df_ts[(df_ts['id'] == sid) & (df_ts['time_phase'] == 0)]
+        if not base_rows.empty:
+            base_avg = base_rows[temp_col].mean()
+            baseline_list.append({'id': sid, 'base_avg': base_avg})
 
-    # 4. RMSE BERECHNUNG (Reiz-Induktion)
-    # RMSE = Wurzel aus dem Durchschnitt der quadrierten Deltas (Max_Reiz - Baseline)
-    deltas = []
-    for index, row in df_sum.iterrows():
-        sid = row['id']
-        if sid in baseline_lookup:
-            # Hier berechnen wir, wie stark der Reiz die Haut WIRKLICH erhitzt hat
-            delta_reiz = row[max_col] - baseline_lookup[sid]
-            deltas.append(delta_reiz)
+    df_base = pd.DataFrame(baseline_list)
 
-    rmse_val = np.sqrt(np.mean(np.array(deltas)**2))
+    # 4. TABELLEN ZUSAMMENFÜHREN
+    df_final = df_sum.merge(df_base, on='id')
 
-    # 5. OUTPUT
-    print("\n--- Biometrische Kennwerte (v5.0.0) ---")
-    print(f"Effektstärke Cohen's d:      {df_sum[df_sum['group_id']==1]['auc_delta'].mean() - df_sum[df_sum['group_id']==0]['auc_delta'].mean():.4f} (Raw Diff)")
-    # (Wir nutzen hier die Werte, die du oben schon bestätigt hast)
-    print(f"Gepoolte SD (AUC):           246.57")
-    print(f"Effektstärke Cohen's d:      -1.0974")
-    print(f"RMSE (Reiz-Reproduzierbarkeit): {rmse_val:.4f} K")
+    # 5. REIZ-VALIDIERUNG BERECHNEN (Spitzentemperatur vs. Baseline)
+    # Nutzt deinen manuell eingetragenen temp_aoi_a_max aus cohens_d.csv [2]
+    df_final['reiz_delta'] = df_final['temp_aoi_a_max'] - df_final['base_avg']
 
-    if rmse_val <= 0.3:
-        print("=> ERFOLG: Technisches Kriterium laut Protokoll erfüllt.")
+    # 6. OUTPUT DER ERGEBNISSE
+    print("\n--- Deskriptive Statistik der AUC ---")
+    # Gruppierung (0=Sham, 1=Verum) [3]
+    stats = df_final.groupby('group_id')['auc_delta'].agg(['mean', 'std', 'count']).round(2)
+    print(stats)
+
+    # Cohen's d Berechnung
+    verum = df_final[df_final['group_id'] == 1]['auc_delta'].dropna()
+    sham = df_final[df_final['group_id'] == 0]['auc_delta'].dropna()
+
+    pooled_sd = np.sqrt(((len(verum)-1)*verum.var() + (len(sham)-1)*sham.var()) / (len(verum)+len(sham)-2))
+    d = (verum.mean() - sham.mean()) / pooled_sd
+
+    # RMSE (Root Mean Square Error der Reizsetzung) [4]
+    rmse_reiz = np.sqrt(np.mean(df_final['reiz_delta'].dropna()**2))
+
+    print("\n--- Biometrische Kennwerte (v5.1.0) ---")
+    print(f"Gepoolte SD (AUC):           {pooled_sd:.2f}")
+    print(f"Effektstärke Cohen's d:      {d:.4f}")
+    print(f"RMSE (Hitzereiz-Präzision):  {rmse_reiz:.4f} K")
+
+    if rmse_reiz <= 0.3:
+        print("=> ERFOLG: Technisches Kriterium (RMSE <= 0.3 K) erfüllt.")
     else:
-        print(f"=> HINWEIS: RMSE von {rmse_val:.2f} K zeigt höhere technische Varianz als geplant.")
+        print(f"=> HINWEIS: RMSE von {rmse_reiz:.2f} K zeigt Varianz in der Reizsetzung.")
 
 except Exception as e:
-    print(f"Fehler in v5.0.0: {e}")
-
+    print(f"Kritischer Fehler: {e}")
