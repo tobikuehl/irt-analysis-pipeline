@@ -1,59 +1,55 @@
 import pandas as pd
 import numpy as np
 
-try:
-    # 1. DATEN LADEN (US-Settings: Punkt als Dezimaltrenner)
-    df_ts = pd.read_csv('Messungen_Zeitreihen.csv', sep=',')
+def process_aligned_data(filename):
+    # 1. DATEN LADEN
+    df = pd.read_csv(filename, sep=',')
     df_proto = pd.read_csv('Messungen_Protokoll-groupID.csv', sep=',')
 
-    # Spaltennamen säubern
-    df_ts.columns = df_ts.columns.str.strip()
-    df_proto.columns = df_proto.columns.str.strip()
-
-    # 2. PER-PROTOCOL FILTERING
+    # Per-Protocol Filter (Ausschluss IDs 1-4, 6-8, 26 wegen fehlender Baseline)
     valid_ids = df_proto[df_proto['dropout_pp'] == 0]['id'].unique()
-    df_ts = df_ts[df_ts['id'].isin(valid_ids)]
+    df = df[df['id'].isin(valid_ids)].copy()
 
-    # 3. BASELINE (Phase 0) - Mittelwert als stabiler Startpunkt
-    # Wir berechnen den Mittelwert der Phase 0 pro AOI
-    base_a = df_ts[df_ts['time_phase'] == 0].groupby('id')['temp_aoi_a_avg'].mean().reset_index()
-    base_b = df_ts[df_ts['time_phase'] == 0].groupby('id')['temp_aoi_b_avg'].mean().reset_index()
+    # 2. ANKER-ZEITEN DEFINIEREN
+    # Wir suchen für jede ID den Zeitpunkt, an dem phase_4_begin markiert ist
+    anchors = df[df['time_phase_4_begin'] == 1][['id', 'time_seconds']].rename(columns={'time_seconds': 'anchor_time'})
 
-    base_df = base_a.merge(base_b, on='id', suffixes=('_base_a', '_base_b'))
+    # Falls eine ID keinen Anker hat (Protokollfehler), nutzen wir den ersten Phase-4-Eintrag
+    fallback_anchors = df[df['time_phase'] == 4].groupby('id')['time_seconds'].min().reset_index().rename(columns={'time_seconds': 'anchor_time'})
 
-    # 4. TRANSFORMATION DER POST-INTERVENTION (Phase 4) & ARTEFAKTE (Phase 3)
-    # Wir behalten Phase 3 bei, markieren sie aber als NaN, um die Zeitreihen-Lücken
-    # für JASP korrekt abzubilden (Missing Values statt Zeit-Stauchung).
-    df_kinetics = df_ts[df_ts['time_phase'].isin([3, 4])].copy()
+    final_anchors = pd.merge(fallback_anchors, anchors, on='id', how='left')
+    final_anchors['anchor_time'] = final_anchors['anchor_time_y'].fillna(final_anchors['anchor_time_x'])
 
-    # Falls Phase 3: Werte auf NaN setzen (da Bewegungsartefakte unbrauchbar sind)
-    mask_art = df_kinetics['time_phase'] == 3
-    df_kinetics.loc[mask_art, ['temp_aoi_a_avg', 'temp_aoi_b_avg']] = np.nan
+    # 3. ZEITREIHEN AUSRICHTEN
+    df = df.merge(final_anchors[['id', 'anchor_time']], on='id')
+    df['time_aligned'] = df['time_seconds'] - df['anchor_time']
 
-    # 5. ZEITREIHEN-STABILE SPALTEN (Sequence-based mit Zeit-Info)
-    # Da die Sekunden-Stempel variieren, nutzen wir die image_seq (relativ zum Start)
-    # Wir pivotieren getrennt für AOI A und B
+    # 4. BINNING FÜR JASP (30s-Raster)
+    # Wir runden die ausgerichtete Zeit auf das nächste 30s-Intervall
+    df['time_bin'] = (df['time_aligned'] / 30).round().astype(int) * 30
 
-    # Pivot AOI A
-    wide_a = df_kinetics.pivot(index='id', columns='image_seq', values='temp_aoi_a_avg')
-    wide_a.columns = [f'a_seq{int(c)}' for c in wide_a.columns]
+    # Extra-Bilder und Jitter glätten durch Mittelung pro Bin
+    df_binned = df.groupby(['id', 'time_bin'])[['temp_aoi_a_avg', 'temp_aoi_b_avg']].mean().reset_index()
 
-    # Pivot AOI B (Kontrolle)
-    wide_b = df_kinetics.pivot(index='id', columns='image_seq', values='temp_aoi_b_avg')
-    wide_b.columns = [f'b_seq{int(c)}' for c in wide_b.columns]
+    # 5. TRANSFORMATION INS WIDE-FORMAT (Nur für Phase 4: Recovery)
+    # Wir nehmen nur Werte ab dem Anker (t >= 0)
+    df_recovery = df_binned[df_binned['time_bin'] >= 0]
 
-    # 6. MERGE ZUM FINALEN WIDE-FORMAT
-    df_wide = df_proto[['id', 'group_id']].merge(base_df, on='id')
-    df_wide = df_wide.merge(wide_a, on='id').merge(wide_b, on='id')
+    wide_a = df_recovery.pivot(index='id', columns='time_bin', values='temp_aoi_a_avg')
+    wide_a.columns = [f'rec_t{c}' for c in wide_a.columns]
 
-    # 7. EXPORT (Punkt-Dezimal für JASP)
-    df_wide.to_csv('Messungen_Zeitreihen-wide.csv', index=False)
+    # 6. BASELINE (Phase 0) HINZUFÜGEN
+    # Wir nutzen den Mittelwert der gesamten Phase 0 als stabilen Referenzwert
+    baselines = df[df['time_phase'] == 0].groupby('id')['temp_aoi_a_avg'].mean().reset_index().rename(columns={'temp_aoi_a_avg': 'baseline_avg'})
 
-    print("\n--- Wide-Format Konvertierung v5.5.0 abgeschlossen ---")
-    print(f"Dateiname: Messungen_Zeitreihen-wide.csv")
-    print(f"Anzahl Probanden (PP): {len(df_wide)}")
-    print(f"Zeitachse: Phase 3 (Artefakte) wurde als 'NaN' erhalten.")
-    print(f"Kontroll-AOI: temp_aoi_b ist integriert.")
+    # 7. FINALER EXPORT
+    df_wide = df_proto[['id', 'group_id']].merge(baselines, on='id').merge(wide_a, on='id')
+    df_wide.to_csv('Messungen_Zeitreihen-final-wide.csv', index=False)
 
+    return df_wide
+
+try:
+    df_final = process_aligned_data('Messungen_Zeitreihen_phase-long.csv')
+    print("Alignment v5.8.0 erfolgreich. Datei 'Messungen_Zeitreihen-final-wide.csv' erstellt.")
 except Exception as e:
     print(f"Fehler: {e}")
