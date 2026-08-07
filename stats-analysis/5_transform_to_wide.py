@@ -1,7 +1,7 @@
 import pandas as pd
 import numpy as np
 
-def generate_ultimate_jasp_table(long_file, proto_file):
+def sanitize_ultimate_data(long_file, proto_file):
     # 1. DATENIMPORT
     df = pd.read_csv(long_file)
     df_proto = pd.read_csv(proto_file)
@@ -10,58 +10,60 @@ def generate_ultimate_jasp_table(long_file, proto_file):
     valid_ids = df_proto[df_proto['dropout_pp'] == 0]['id'].unique()
     df = df[df['id'].isin(valid_ids)].copy()
 
-    # 3. HOCHPRÄZISE ANKER-AUSRICHTUNG (Beginn Phase 4)
+    # 3. ANKER-ALIGNMENT & BINNING (wie v9.0)
     anchors = df[df['time_phase_4_begin'] == 1][['id', 'time_seconds']].rename(columns={'time_seconds': 'anchor_t'})
     df = df.merge(anchors, on='id', how='left')
     df['t_aligned'] = df['time_seconds'] - df['anchor_t']
-
-    # 4. 30s-BINNING (Stabilisierung der Vasomotion nach Shusterman)
     df['bin'] = (df['t_aligned'] / 30).round().astype(int) * 30
     df_binned = df.groupby(['id', 'bin'])[['temp_aoi_a_avg', 'temp_aoi_b_avg']].mean().reset_index()
 
-    # 5. WIDE-FORMAT FÜR BEIDE AREALE (A & B)
+    # 4. WIDE-FORMAT ERZEUGEN
     df_rec = df_binned[df_binned['bin'] >= 0]
-
-    # AOI A (Interventions-Areal)
     wide_a = df_rec.pivot(index='id', columns='bin', values='temp_aoi_a_avg')
     wide_a.columns = [f'a_rec_t{int(c)}' for c in wide_a.columns]
-
-    # AOI B (Kontroll-Areal) - Hier kommen die fehlenden Daten zurück
     wide_b = df_rec.pivot(index='id', columns='bin', values='temp_aoi_b_avg')
     wide_b.columns = [f'b_rec_t{int(c)}' for c in wide_b.columns]
 
-    # 6. BASELINE-MITTELWERTE (Phase 0)
-    baselines = df[df['time_phase'] == 0].groupby('id')[['temp_aoi_a_avg', 'temp_aoi_b_avg']].mean().reset_index()
-    baselines.columns = ['id', 'a_base', 'b_base']
+    # 5. PROTOKOLL-DATEN AUFBEREITEN (Hardcore-Cleaning)
+    # Spalten mit Kommata (Strings) in Floats wandeln
+    for col in ['temp_water', 'temp_room_start', 'rh_room_start']:
+        if df_proto[col].dtype == 'object':
+            df_proto[col] = df_proto[col].str.replace(',', '.').astype(float)
 
-    # 7. MERGE ALLER VARIABLEN (Demographie & Confounder)
-    # Wir nehmen ALLES mit, was du im Protokoll gepflegt hast
+    # CEQ-Scores runden (1 Nachkommastelle)
+    ceq_cols = [c for c in df_proto.columns if 'calc' in c]
+    df_proto[ceq_cols] = df_proto[ceq_cols].round(1)
+
+    # 6. MERGE ZUR ULTIMATIVE-WIDE
     relevant_proto_cols = [
         'id', 'group_id', 'age', 'height', 'weight', 'gender',
         'nicotin_washout', 'caffeine_washout', 'novalmin_washout',
         'ost_experience', 'contraception', 'cycle_days', 'cycle_phase',
         'temp_water', 'temp_room_start', 'rh_room_start'
     ]
-    df_proto_clean = df_proto[relevant_proto_cols]
 
-    df_jasp = df_proto_clean.merge(baselines, on='id', how='inner')
-    df_jasp = df_jasp.merge(wide_a, on='id', how='inner')
-    df_jasp = df_jasp.merge(wide_b, on='id', how='inner')
+    # Baseline-Mittelwerte
+    baselines = df[df['time_phase'] == 0].groupby('id')[['temp_aoi_a_avg', 'temp_aoi_b_avg']].mean().reset_index()
+    baselines.columns = ['id', 'a_base', 'b_base']
 
-    # 8. NUMERISCHE INTEGRITÄT & TYP-KONFORMITÄT
-    df_jasp['id'] = df_jasp['id'].astype(int)
-    df_jasp['group_id'] = df_jasp['group_id'].astype(int)
+    df_jasp = df_proto[relevant_proto_cols].merge(baselines, on='id', how='inner')
+    df_jasp = df_jasp.merge(wide_a, on='id', how='inner').merge(wide_b, on='id', how='inner')
 
-    # Temperaturen auf 2 Nachkommastellen runden
+    # 7. FINALES TYP-CASTING (Integer erzwingen für JASP-Nominal-Skalen)
+    # Wir füllen NaNs temporär mit -1, um Integer-Cast zu erlauben,
+    # JASP erkennt -1 dann als eigene Kategorie oder wir lassen es als Float und definieren es in JASP.
+    # Bessere Lösung für CSV: Wir runden einfach und lassen Pandas die .0 anhängen.
+
+    # Temperaturen auf 2 Nachkommastellen (Präzision IRT)
     temp_cols = [c for c in df_jasp.columns if 'base' in c or 'rec' in c or 'temp_' in c]
     df_jasp[temp_cols] = df_jasp[temp_cols].round(2)
 
-    # 9. EXPORT
-    df_jasp.to_csv('Messungen_Zeitreihen-ultimate-wide.csv', index=False, na_rep='NaN')
+    # 8. EXPORT
+    df_jasp.to_csv('Messungen_Zeitreihen-ultimate-wide_v10.csv', index=False, na_rep='')
     return df_jasp
 
 try:
-    df_final = generate_ultimate_jasp_table('Messungen_Zeitreihen_phase-long1.csv', 'Messungen_Protokoll-groupID.csv')
-    print("Ultimate-Wide-Tabelle erstellt. Alle Confounder und AOI B sind enthalten.")
+    df_final = sanitize_ultimate_data('Messungen_Zeitreihen_phase-long1.csv', 'Messungen_Protokoll-groupID.csv')
+    print("Clean-Data-Package v10.0 erstellt. Alle Formate sind nun JASP-optimiert.")
 except Exception as e:
-    print(f"Fehler beim Zusammenführen: {e}")
+    print(f"Kritischer Fehler beim Sanitizing: {e}")
