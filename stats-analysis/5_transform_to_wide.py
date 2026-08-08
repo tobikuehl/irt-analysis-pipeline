@@ -1,19 +1,20 @@
 import pandas as pd
 import numpy as np
 
-def generate_clean_v15_table(long_file, proto_file):
-    # 1. DATENIMPORT & BEREINIGUNG DER ZEILEN
+def generate_final_validated_table(long_file, proto_file):
+    # 1. DATENIMPORT & FILTERUNG DER GEISTERZEILEN
     df_long = pd.read_csv(long_file)
     df_proto = pd.read_csv(proto_file)
 
-    # Entfernt Geisterzeilen am Ende (alles ohne echte ID fliegt raus)
+    # Entfernt alle Zeilen am Ende der Tabelle, die keine echte ID haben [3]
     df_proto = df_proto.dropna(subset=['id']).copy()
     df_proto['id'] = df_proto['id'].astype(int)
 
-    # 2. ZEIT-TRANSFORMATION (Minuten seit Mitternacht)
+    # 2. ZEIT-TRANSFORMATION (time_start -> Minuten seit Mitternacht)
     def calculate_minutes(time_val):
         try:
             if pd.isna(time_val) or str(time_val).strip() == '': return np.nan
+            # Erwartet Format HH:MM:SS
             h, m, s = map(int, str(time_val).split(':'))
             return h * 60 + m
         except:
@@ -21,7 +22,8 @@ def generate_clean_v15_table(long_file, proto_file):
 
     df_proto['time_minutes_midnight'] = df_proto['time_start'].apply(calculate_minutes)
 
-    # 3. DAS "KOMMA-MONSTER" BESIEGEN (Numerische Validierung)
+    # 3. NUMERISCHE VALIDIERUNG (Kommata-Fix & Float-Zwang)
+    # Spalten, die in JASP als Scale (Lineal) zur Verfügung stehen müssen
     numeric_cols = [
         'caffeine_washout', 'nicotin_washout', 'novalmin_washout',
         'temp_water', 'temp_room_start', 'temp_room_end',
@@ -31,11 +33,12 @@ def generate_clean_v15_table(long_file, proto_file):
 
     for col in numeric_cols:
         if col in df_proto.columns:
-            # Erst alles zu String, dann Komma zu Punkt, dann zu Zahl (Float)
+            # Erzwingt Punkt statt Komma und wandelt in echte Zahlen um [3]
             df_proto[col] = df_proto[col].astype(str).str.replace(',', '.', regex=False)
             df_proto[col] = pd.to_numeric(df_proto[col], errors='coerce')
 
-    # 4. ASYMMETRISCHES BINNING (Toleranz -10s/+20s für Drift-Kompensation)
+    # 4. ASYMMETRISCHES BINNING (Alignment mit Drift-Korrektur)
+    # Wir nutzen die stabilisierten Ankerzeitpunkte [2]
     anchors = df_long[(df_long['time_phase_4_begin'] == 1) & (df_long['time_added'] == 1)][['id', 'time_seconds']].rename(columns={'time_seconds': 'anchor_t'})
     fallback = df_long[df_long['time_phase_4_begin'] == 1][['id', 'time_seconds']].rename(columns={'time_seconds': 'anchor_t'})
     anchors = pd.concat([anchors, fallback]).drop_duplicates('id', keep='first')
@@ -44,15 +47,16 @@ def generate_clean_v15_table(long_file, proto_file):
     df_aligned['t_aligned'] = df_aligned['time_seconds'] - df_aligned['anchor_t']
     df_aligned['bin'] = ((df_aligned['t_aligned'] + 10) // 30) * 30
 
-    df_binned = df_aligned.groupby(['id', 'bin'])[['temp_ao_a_avg', 'temp_ao_b_avg']].mean().reset_index()
+    # HIER WAR DER FEHLER: Korrekte Spaltennamen sind temp_aoi_... [1, 2]
+    df_binned = df_aligned.groupby(['id', 'bin'])[['temp_aoi_a_avg', 'temp_aoi_b_avg']].mean().reset_index()
 
-    # Wide-Transformation für beide Areale (Intervention & Kontrolle)
-    wide_a = df_binned[df_binned['bin'] >= 0].pivot(index='id', columns='bin', values='temp_ao_a_avg')
+    # Wide-Transformation für beide Areale
+    wide_a = df_binned[df_binned['bin'] >= 0].pivot(index='id', columns='bin', values='temp_aoi_a_avg')
     wide_a.columns = [f'a_rec_t{int(c)}' for c in wide_a.columns]
-    wide_b = df_binned[df_binned['bin'] >= 0].pivot(index='id', columns='bin', values='temp_ao_b_avg')
+    wide_b = df_binned[df_binned['bin'] >= 0].pivot(index='id', columns='bin', values='temp_aoi_b_avg')
     wide_b.columns = [f'b_rec_t{int(c)}' for c in wide_b.columns]
 
-    # 5. STRATEGISCHE SPALTEN-SELEKTION (Nur analyse-relevante Daten)
+    # 5. SPALTEN-SELEKTION FÜR JASP (Sauberer Arbeitsbereich)
     analysis_cols = [
         'id', 'group_id', 'dropout_pp', 'time_minutes_midnight', 'age', 'height', 'weight', 'gender',
         'nicotin_washout', 'caffeine_washout', 'novalmin_washout', 'ost_experience',
@@ -68,23 +72,24 @@ def generate_clean_v15_table(long_file, proto_file):
     df_final = df_proto[analysis_cols].merge(baselines, on='id', how='left')
     df_final = df_final.merge(wide_a, on='id', how='left').merge(wide_b, on='id', how='left')
 
-    # 6. FINALES CASTING & RUNDUNG (Verhindert 15-Nachkommastellen-Artefakte)
+    # 6. FINALES CASTING & PRÄZISION
     for int_col in ['id', 'group_id', 'dropout_pp', 'gender']:
         df_final[int_col] = df_final[int_col].fillna(-1).astype(int)
 
-    # Temperaturen und Zeit auf 2 Stellen runden (entspricht Sensor-Präzision 40mK [1])
-    num_cols = [c for c in df_final.columns if 'base' in c or 'rec' in c or 'temp_' in c or 'washout' in c or 'minutes' in c]
-    df_final[num_cols] = df_final[num_cols].round(2)
+    # Runden auf instrumentelle Genauigkeit (40mK NETD der Kamera) [1, 6]
+    temp_cols = [c for c in df_final.columns if 'base' in c or 'rec' in c or 'temp_' in c]
+    df_final[temp_cols] = df_final[temp_cols].round(2)
+    df_final['time_minutes_midnight'] = df_final['time_minutes_midnight'].round(0)
 
     ceq_calc_cols = [c for c in df_final.columns if 'calc' in c]
     df_final[ceq_calc_cols] = df_final[ceq_calc_cols].round(1)
 
     # 7. EXPORT
-    df_final.to_csv('Messungen_Zeitreihen-ultimate-wide_v15.csv', index=False, na_rep='')
+    df_final.to_csv('Messungen_Zeitreihen-ultimate-wide_v15_1.csv', index=False, na_rep='')
     return df_final
 
 try:
-    df_v15 = generate_clean_v15_table('Messungen_Zeitreihen_phase-long1.csv', 'Messungen_Protokoll-groupID.csv')
-    print("Version 15.0 erfolgreich erstellt. Alle numerischen Fehler sind behoben.")
+    df_v15_1 = generate_final_validated_table('Messungen_Zeitreihen_phase-long1.csv', 'Messungen_Protokoll-groupID.csv')
+    print("Version 15.1 erfolgreich erstellt. AOI-Spalten korrigiert, Zeit-Kovariate integriert.")
 except Exception as e:
-    print(f"Fehler bei der Tabellenerstellung: {e}")
+    print(f"Kritischer Fehler im Skript: {e}")
