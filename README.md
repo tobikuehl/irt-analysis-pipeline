@@ -9,12 +9,12 @@ Dieses Repository dokumentiert die im Rahmen der Masterarbeit entwickelte Python
 
 ## Repository-Struktur
 ### 1. Automatisierung der Android-HIKMICRO-App (`android-irt-camera-automation`)
-+ 1_shizuku.sh - ein Test-Skript für die Automatisierung von Shizuku.
-+ 2_termux-setup.sh - ein Skript für die Testung der Koordinaten der NUC- und Auslöse-Buttons der HIKMICRO-App
-+ 3_termux-test.sh - ein Skript für einen Testlauf des Setups
-+ 4_termux-FI.sh - das Skript für die Durchführung der Mess-Reihen
-  - audio/ - enthält Audio-Dateien für die Rückmeldung des zeitlichen Verlaufs
-+ Pre-flight.md - enthält Bemerkungen zu Tests und  erstem Ablauf
++ **`1_shizuku.sh`**: ein Test-Skript für die Automatisierung von Shizuku.
++ **`2_termux-setup.sh`**: ein Skript für die Testung der Koordinaten der NUC- und Auslöse-Buttons der HIKMICRO-App
++ **`3_termux-test.sh`**: ein Skript für einen Testlauf des Setups
++ **`4_termux-FI.sh`**: das Skript für die Durchführung der Mess-Reihen
+  - **`/audio`**: enthält Audio-Dateien für die Rückmeldung des zeitlichen Verlaufs
++ **`Pre-flight.md`**: enthält Bemerkungen zu Tests und  erstem Ablauf
 
 ### 2. Explorative Pipeline (`stats-analysis`)
 + **`01_extractor.py`**: Extraktion der Daten aus den odt-Reports der Software Hikmicro Analyzer.
