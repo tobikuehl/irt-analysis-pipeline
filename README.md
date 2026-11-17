@@ -4,8 +4,10 @@ Automatisierte Datenaufbereitung, Zeitreihen-Transformation und statistische Aus
 ## Kontext & Hinweis zur Reproduzierbarkeit
 Dieses Repository dokumentiert die im Rahmen der Masterarbeit entwickelte Python-Pipeline.
 
-+ **Datenschutz:** Die zugrunde liegenden CSV-Rohdaten und ODT-Reports enthalten physiologische Messreihen der Studienteilnehmenden und sind aus Gründen des Datenschutzes (Art. 9 DSGVO / Zweckbindung der Studieneinwilligung) nicht im Repository enthalten.
-+ **Struktur (Exploration vs. Konsolidierung):** Der Ordner `stats-analysis` enthält die nummerierten ursprünglichen Arbeitsskripte inklusive ihrer iterativen Entwicklungs- und Debugging-Historie (`git log`). Dort liegen auch die nachträglich bereinigten Skripte (ohne Nummerierung) zur dokumentierten Nachvollziehbarkeit der Berechnungsmethoden.
++ **Datenschutz:**  
+  Die zugrunde liegenden CSV-Rohdaten und ODT-Reports enthalten physiologische Messreihen der Studienteilnehmenden und sind aus Gründen des Datenschutzes (Art. 9 DSGVO / Zweckbindung der Studieneinwilligung) nicht im Repository enthalten.
++ **Struktur (Exploration vs. Konsolidierung):**  
+  Der Ordner `stats-analysis` enthält die nummerierten ursprünglichen Arbeitsskripte inklusive ihrer iterativen Entwicklungs- und Debugging-Historie (`git log`). Dort liegen auch die nachträglich bereinigten Skripte (ohne Nummerierung) zur dokumentierten Nachvollziehbarkeit der Berechnungsmethoden.
 
 ## Repository-Struktur
 ### 1. Automatisierung der Android-HIKMICRO-App (`android-irt-camera-automation`)
@@ -26,4 +28,4 @@ Dieses Repository dokumentiert die im Rahmen der Masterarbeit entwickelte Python
 + **`data_preparation_auc.py`**: Bereinigte Berechnung von Dezimal-Normalisierung, Delta, RMSE und Cohen's *d* (AUC).
 
 ### 3. Studie (`pilot`)
-+ **`Modulation of neurogenic inflammation following a controlled thermal stimulus—a randomized, sham-controlled, single-blind pilot study of a novel osteopathic approach.pdf`**: Vorgelegte Studie.
++ **`README.md`**: Modulation of neurogenic inflammation following a controlled thermal stimulus—a randomized, sham-controlled, single-blind pilot study of a novel osteopathic approach (Vorgelegte Studie, alle Rechte vorbehalten).
