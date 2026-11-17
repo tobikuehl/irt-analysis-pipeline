@@ -24,3 +24,6 @@ Dieses Repository dokumentiert die im Rahmen der Masterarbeit entwickelte Python
 + **`05_transform_to_wide.py`** *(13 Iterationen)* **& `5_diagnostic-5.2-to-5.3.py`**: Dezimal-Normalisierung, Filterung, Baseline-Berechnung, Phasen-Einteilung, Handling fehlender Werte (Missing Data), Pivotierung vom Long- ins Wide-Format sowie Zeitpunkt-Berechnung und asymmetrisches Binning / Drift-Korrektur.
 + **`cluster_matches.py`**: Bereinigtes Skript für die Ward-Clusteranalyse auf Basis des AUC-Deltas.
 + **`data_preparation_auc.py`**: Bereinigte Berechnung von Dezimal-Normalisierung, Delta, RMSE und Cohen's *d* (AUC).
+
+### 3. Studie (`pilot`)
++ **`Modulation of neurogenic inflammation following a controlled thermal stimulus—a randomized, sham-controlled, single-blind pilot study of a novel osteopathic approach.pdf`**: Vorgelegte Studie.
