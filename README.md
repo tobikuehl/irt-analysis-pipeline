@@ -29,4 +29,4 @@ Dieses Repository dokumentiert die im Rahmen der Masterarbeit entwickelte Python
 
 ### 3. Studie (`pilot`)
 + **`README.md`**: Modulation of neurogenic inflammation following a controlled thermal stimulus—a randomized, sham-controlled, single-blind pilot study of a novel osteopathic approach (Vorgelegte Studie, alle Rechte vorbehalten).
-+ * **[kolloquium-methodik.pdf](pilot/kolloquium-methodik.pdf):** Gekürzte Kolloquiumspräsentation zum Studiendesign, Mess-Setup und zur statistischen Methodik (ohne unveröffentlichte Studienergebnisse).
++ **[kolloquium-methodik.pdf](pilot/kolloquium-methodik.pdf):** Gekürzte Kolloquiumspräsentation zum Studiendesign, Mess-Setup und zur statistischen Methodik (ohne unveröffentlichte Studienergebnisse).
